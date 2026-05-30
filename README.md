@@ -1,8 +1,9 @@
+# Synyi Lazy Dog Skill
+
 <div align="center">
   <img src="lazy-dog.png" alt="Lazy Dog Logo" width="400" />
 </div>
 
-# Synyi Lazy Dog Skill
 
 ## 功能
 
