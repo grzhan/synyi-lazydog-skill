@@ -1,0 +1,21 @@
+{
+  "projects": [
+    {
+      "projectCode": "Y3018005",
+      "projectName": "AI CLINIC智能医疗系统",
+      "aliases": [
+        "AI CLINIC",
+        "AI clinic",
+        "智能医疗系统"
+      ],
+      "repoPaths": [],
+      "githubRepos": [],
+      "githubAuthors": [
+        "your-github-username",
+        "your-git-username",
+        "your-email@example.com",
+        "Your Name"
+      ]
+    }
+  ]
+}
