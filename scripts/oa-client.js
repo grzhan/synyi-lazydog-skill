@@ -229,7 +229,18 @@ function extractContext(loadFormPayload) {
     context.signatureContext = parseSignatureAttributes(context.signatureAttributesStr);
   }
 
+  context.dataInputCfg = loadFormPayload?.linkageCfg?.dataInputCfg || {};
+
   return context;
+}
+
+// 服务端管理员重建联动规则后 ID 会变(曾经 1696 -> 3811),优先从表单定义里动态取
+function dataInputLinkageIds(context, fieldId, fallbackIds) {
+  const cfgList = context.dataInputCfg?.[String(fieldId)];
+  const ids = Array.isArray(cfgList)
+    ? cfgList.map((cfg) => stringifyValue(cfg?.config)).filter(Boolean)
+    : [];
+  return ids.length > 0 ? ids : fallbackIds;
 }
 
 function flattenFieldValue(field) {
@@ -986,25 +997,29 @@ async function initDetailRow(context, index) {
     referer: context.referer
   });
 
+  const projectLinkageIds = dataInputLinkageIds(context, 19760, ['3811']);
+  const customerLinkageIds = dataInputLinkageIds(context, 19762, ['3812', '3322']);
+  const inputForm = {
+    ...common,
+    triSource: '3',
+    showAI: '0',
+    [`field19760${rowSuffix}`]: '',
+    [`field19762${rowSuffix}`]: '',
+    linkageid: [...projectLinkageIds, ...customerLinkageIds].join(',')
+  };
+  for (const linkageId of projectLinkageIds) {
+    inputForm[`triFieldid_${linkageId}`] = '19760';
+    inputForm[`rowIndexStr_${linkageId}`] = index;
+    inputForm[`triTableMark_${linkageId}`] = 'detail_1';
+  }
+  for (const linkageId of customerLinkageIds) {
+    inputForm[`triFieldid_${linkageId}`] = '19762';
+    inputForm[`rowIndexStr_${linkageId}`] = index;
+    inputForm[`triTableMark_${linkageId}`] = 'detail_1';
+  }
   const response2 = await request('/api/workflow/linkage/reqDataInputResult', {
     method: 'POST',
-    form: {
-      ...common,
-      triSource: '3',
-      showAI: '0',
-      triFieldid_1696: '19760',
-      rowIndexStr_1696: index,
-      triTableMark_1696: 'detail_1',
-      [`field19760${rowSuffix}`]: '',
-      triFieldid_3242: '19762',
-      rowIndexStr_3242: index,
-      triTableMark_3242: 'detail_1',
-      [`field19762${rowSuffix}`]: '',
-      triFieldid_3322: '19762',
-      rowIndexStr_3322: index,
-      triTableMark_3322: 'detail_1',
-      linkageid: '1696,3242,3322'
-    },
+    form: inputForm,
     referer: context.referer
   });
 
@@ -1079,23 +1094,28 @@ async function applyProjectSelection(context, rowIndex, projectId) {
     f_weaver_belongto_usertype: context.f_weaver_belongto_usertype
   };
 
+  const projectLinkageId = dataInputLinkageIds(context, 19760, ['3811'])[0];
   const inputResponse = await request('/api/workflow/linkage/reqDataInputResult', {
     method: 'POST',
     form: {
       ...common,
       triSource: '1',
       showAI: '0',
-      triFieldid_1696: '19760',
-      rowIndexStr_1696: rowIndex,
-      triTableMark_1696: 'detail_1',
+      [`triFieldid_${projectLinkageId}`]: '19760',
+      [`rowIndexStr_${projectLinkageId}`]: rowIndex,
+      [`triTableMark_${projectLinkageId}`]: 'detail_1',
       [`field19760${rowSuffix}`]: projectId,
-      linkageid: '1696'
+      linkageid: projectLinkageId
     },
     referer: context.referer
   });
 
   const inputPayload = parseJson(inputResponse.text, 'project selection input');
-  const projectCode = flattenFieldValue(inputPayload.assignInfo_1696?.changeValue?.[`field19818${rowSuffix}`]);
+  const projectAssign = inputPayload[`assignInfo_${projectLinkageId}`]?.changeValue;
+  if (!projectAssign || !flattenFieldValue(projectAssign[`field19818${rowSuffix}`])) {
+    throw new Error(`项目联动 ${projectLinkageId} 没有回填项目编号(项目 id=${projectId}),联动配置可能又变了`);
+  }
+  const projectCode = flattenFieldValue(projectAssign[`field19818${rowSuffix}`]);
 
   const sqlResponse = await request('/api/workflow/linkage/reqFieldSqlResult', {
     method: 'POST',
@@ -1137,7 +1157,7 @@ async function applyProjectSelection(context, rowIndex, projectId) {
       triFieldid_8783: '19765',
       rowIndexStr_8783: rowIndex,
       triTableMark_8783: 'detail_1',
-      [`field19765${rowSuffix}`]: flattenFieldValue(inputPayload.assignInfo_1696?.changeValue?.[`field19765${rowSuffix}`]),
+      [`field19765${rowSuffix}`]: flattenFieldValue(projectAssign[`field19765${rowSuffix}`]),
       linkageid: '8783'
     },
     referer: context.referer
