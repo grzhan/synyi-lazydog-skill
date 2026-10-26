@@ -23,6 +23,21 @@ const WORKFLOW_CONFIG = {
   browserId: 161
 };
 
+const PROJECT_BROWSER_CONFIG = {
+  research: {
+    type: 'browser.devprj_notover',
+    fieldId: 19760,
+    codeKey: 'cpbh',
+    nameKey: 'cpmc'
+  },
+  customer: {
+    type: 'browser.xmqd_cyygs_glkhxm',
+    fieldId: 19762,
+    codeKey: 'xmbh',
+    nameKey: 'xmmc'
+  }
+};
+
 const WORKTIME_SUPPLEMENT_LIST_CONFIG = {
   browserId: 16,
   workflowId: 313,
@@ -230,6 +245,7 @@ function extractContext(loadFormPayload) {
   }
 
   context.dataInputCfg = loadFormPayload?.linkageCfg?.dataInputCfg || {};
+  context.fieldSqlCfg = loadFormPayload?.linkageCfg?.fieldSqlCfg || {};
 
   return context;
 }
@@ -887,19 +903,31 @@ async function callSecondDateLinkage(context, workDate) {
   return parseJson(response.text, 'second date linkage');
 }
 
-async function searchProjects({ projectName = '', projectCode = '', applicantId, requestId = -1 }) {
+async function searchProjects({
+  projectName = '',
+  projectCode = '',
+  applicantId,
+  requestId = -1,
+  projectType = 'research',
+  pageSize = 10,
+  current = 1
+}) {
+  const browser = PROJECT_BROWSER_CONFIG[projectType];
+  if (!browser) {
+    throw new Error(`不支持的项目类型: ${projectType}`);
+  }
   const currenttime = nowMs();
   const query = {
-    pageSize: 10,
-    current: 1,
-    min: 1,
-    max: 10,
+    pageSize,
+    current,
+    min: (current - 1) * pageSize + 1,
+    max: current * pageSize,
     companyId: 1,
     con13042_value: projectName,
     con13043_value: projectCode,
     isFromAdvanceSearch: 1,
-    type: 'browser.devprj_notover',
-    fielddbtype: 'browser.devprj_notover',
+    type: browser.type,
+    fielddbtype: browser.type,
     currenttime,
     nodataloading: 0,
     requestid: requestId,
@@ -913,7 +941,7 @@ async function searchProjects({ projectName = '', projectCode = '', applicantId,
     wf_isagent: 0,
     wf_beagenter: 0,
     wfTestStr: '',
-    fieldid: WORKFLOW_CONFIG.browserFieldId,
+    fieldid: browser.fieldId,
     viewtype: 1,
     fromModule: 'workflow',
     wfCreater: applicantId,
@@ -1170,6 +1198,77 @@ async function applyProjectSelection(context, rowIndex, projectId) {
   };
 }
 
+function fieldSqlLinkageIds(context, fieldId, fallbackIds) {
+  const cfgList = context.fieldSqlCfg?.[String(fieldId)];
+  const ids = Array.isArray(cfgList)
+    ? cfgList.map((cfg) => stringifyValue(cfg?.config)).filter(Boolean)
+    : [];
+  return ids.length > 0 ? ids : fallbackIds;
+}
+
+async function applyCustomerProjectSelection(context, rowIndex, projectId) {
+  const rowSuffix = `_${rowIndex}`;
+  const common = {
+    requestid: context.requestId,
+    workflowid: context.workflowId,
+    nodeid: context.nodeId,
+    formid: context.formId,
+    isbill: context.isBill,
+    wfTestStr: '',
+    f_weaver_belongto_userid: context.creatorId,
+    f_weaver_belongto_usertype: context.f_weaver_belongto_usertype
+  };
+
+  const customerLinkageId = dataInputLinkageIds(context, 19762, ['3812'])[0];
+  const inputResponse = await request('/api/workflow/linkage/reqDataInputResult', {
+    method: 'POST',
+    form: {
+      ...common,
+      triSource: '1',
+      showAI: '0',
+      [`triFieldid_${customerLinkageId}`]: '19762',
+      [`rowIndexStr_${customerLinkageId}`]: rowIndex,
+      [`triTableMark_${customerLinkageId}`]: 'detail_1',
+      [`field19762${rowSuffix}`]: projectId,
+      linkageid: customerLinkageId
+    },
+    referer: context.referer
+  });
+
+  const inputPayload = parseJson(inputResponse.text, 'customer project selection input');
+  const projectAssign = inputPayload[`assignInfo_${customerLinkageId}`]?.changeValue;
+  if (!projectAssign || !flattenFieldValue(projectAssign[`field19819${rowSuffix}`])) {
+    throw new Error(`客户项目联动 ${customerLinkageId} 没有回填项目编号(项目 id=${projectId}),联动配置可能又变了`);
+  }
+  const projectCode = flattenFieldValue(projectAssign[`field19819${rowSuffix}`]);
+
+  const sqlLinkageIds = fieldSqlLinkageIds(context, 19762, ['8769']);
+  const sqlForm = {
+    ...common,
+    triSource: '1',
+    showAI: '0',
+    [`field19819${rowSuffix}`]: projectCode,
+    [`customDepend_field19762${rowSuffix}`]: JSON.stringify({ sqr: String(context.creatorId) }),
+    field19787: context.creatorId,
+    linkageid: sqlLinkageIds.join(',')
+  };
+  for (const linkageId of sqlLinkageIds) {
+    sqlForm[`triFieldid_${linkageId}`] = '19762';
+    sqlForm[`rowIndexStr_${linkageId}`] = rowIndex;
+    sqlForm[`triTableMark_${linkageId}`] = 'detail_1';
+  }
+  const sqlResponse = await request('/api/workflow/linkage/reqFieldSqlResult', {
+    method: 'POST',
+    form: sqlForm,
+    referer: context.referer
+  });
+
+  return {
+    inputPayload,
+    sqlPayload: parseJson(sqlResponse.text, 'customer project selection sql')
+  };
+}
+
 async function applySupplementSelection(context, supplementRequestId) {
   const common = {
     requestid: context.requestId ?? -1,
@@ -1202,7 +1301,11 @@ async function applySupplementSelection(context, supplementRequestId) {
   return parseJson(response.text, 'supplement selection input');
 }
 
-function buildFinalSubmitPayload(context, mainFields, rowDataList, { startIndex = 0, omitMainChanged = false } = {}) {
+function buildFinalSubmitPayload(context, mainFields, rowDataList, {
+  startIndex = 0,
+  omitMainChanged = false,
+  projectType = 'research'
+} = {}) {
   const totalHours = rowDataList.reduce((sum, row, offset) => {
     const realIndex = startIndex + offset;
     return sum + Number(row[`field19767_${realIndex}`] || 0);
@@ -1394,6 +1497,23 @@ function buildFinalSubmitPayload(context, mainFields, rowDataList, { startIndex 
     'field19768',
     'field27559'
   ];
+  const rowCustomerKeysFirst = [
+    'field19762',
+    'field19763',
+    'field19769',
+    'field19819',
+    'field21341',
+    'field21342',
+    'field21343',
+    'field22430',
+    'field22432',
+    'field27560',
+    'field28085',
+    'field30946',
+    'field30947',
+    'field30948'
+  ];
+  const rowCustomerKeysLater = rowCustomerKeysFirst;
   const rowDefaultEmptyKeys = ['field19764', 'field19809', 'field21746'];
 
   if (startIndex > 0) {
@@ -1425,7 +1545,9 @@ function buildFinalSubmitPayload(context, mainFields, rowDataList, { startIndex 
     }
 
     const rowInitKeys = realIndex === 0 ? rowInitKeysFirst : rowInitKeysLater;
-    const rowProjectKeys = realIndex === 0 ? rowProjectKeysFirst : rowProjectKeysLater;
+    const rowProjectKeys = projectType === 'customer'
+      ? (realIndex === 0 ? rowCustomerKeysFirst : rowCustomerKeysLater)
+      : (realIndex === 0 ? rowProjectKeysFirst : rowProjectKeysLater);
     changed.push(...rowInitKeys.map((key) => `${key}_${realIndex}`));
     if (realIndex === 0 && offset === 0) {
       changed.push(`field19759_${realIndex}`, `field19767_${realIndex}`, 'field19792', 'field19803');
@@ -1799,5 +1921,6 @@ export {
   submitExistingForm,
   submitAdvanceForm,
   applyProjectSelection,
+  applyCustomerProjectSelection,
   applySupplementSelection
 };

@@ -1,12 +1,11 @@
 {
   "projects": [
     {
-      "projectCode": "Y3018005",
-      "projectName": "AI CLINIC智能医疗系统",
+      "projectCode": "Y3018006",
+      "projectName": "创新模式产品",
       "aliases": [
-        "AI CLINIC",
-        "AI clinic",
-        "智能医疗系统"
+        "创新模式",
+        "创新产品"
       ],
       "repoPaths": [],
       "githubRepos": [],

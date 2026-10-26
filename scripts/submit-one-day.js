@@ -5,7 +5,13 @@ import { submitOneDay, pickSupplement } from './submit-month-worktime.js';
 async function main() {
   const args = parseArgs(process.argv);
   const date = args.date;
-  const projectCode = args.projectCode || 'Y3018005';
+  const customerProjectCode = args.customerProjectCode;
+  if (customerProjectCode && args.projectCode) {
+    console.error('--projectCode 和 --customerProjectCode 不能同时传');
+    process.exit(1);
+  }
+  const projectCode = customerProjectCode || args.projectCode || 'Y3018005';
+  const projectType = customerProjectCode ? 'customer' : args.projectType;
   const content = args.content || 'Nexus 开发';
   const hours = args.hours ? Number(args.hours) : 8;
   const supplementRequestIdArg = args.supplementRequestId;
@@ -14,7 +20,7 @@ async function main() {
   const password = process.env.SYNYI_OA_PASSWORD;
 
   if (!date) {
-    console.error('用法: node submit-one-day.js --date 2026-05-26 [--supplementRequestId 1058063 | --noSupplement] [--projectCode Y3018005] [--content "Nexus 开发"] [--hours 8]');
+    console.error('用法: node submit-one-day.js --date 2026-05-26 [--supplementRequestId 1058063 | --noSupplement] [--projectCode Y3018005 | --customerProjectCode A3018377] [--projectType research|customer] [--content "Nexus 开发"] [--hours 8]');
     process.exit(1);
   }
 
@@ -56,6 +62,7 @@ async function main() {
     date,
     supplementRequestId,
     projectCode,
+    projectType,
     content,
     hours,
     applicantId
@@ -66,6 +73,7 @@ async function main() {
     date: result.date,
     requestId: result.requestId,
     projectCode: result.projectCode,
+    projectType: result.projectType,
     projectName: result.projectName,
     content,
     hours

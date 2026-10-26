@@ -66,6 +66,8 @@ description: 在用户要求录入指定日期、今天、昨天或昨日的工�
 | 参数 | 默认值 | 说明 |
 |---|---|---|
 | `--projectCode` | `Y3018005` | 项目编号 |
+| `--customerProjectCode` | 无 | 客户项目编号；与 `--projectCode` 互斥，传入后走客户项目字段 |
+| `--projectType` | 按编号自动判断 | `research` 或 `customer`；客户项目也可直接使用 `--projectCode A...` 自动判断 |
 | `--content` | `Nexus 开发` | 工作内容 |
 | `--hours` | `8` | 每天工时 |
 | `--noSupplement` | 普通工时录入必须传 | 不关联补录流程;录入今天、昨天、昨日、今天和昨天的工时也必须传 |
@@ -86,6 +88,14 @@ cd scripts
 node submit-one-day.js --date YYYY-MM-DD --noSupplement --projectCode Y3018005 --content "Nexus 开发" --hours 8
 ```
 
+客户项目使用独立的客户项目字段；可显式传入:
+
+```bash
+node submit-one-day.js --date YYYY-MM-DD --noSupplement --customerProjectCode A3018377 --content "客户项目开发" --hours 8
+```
+
+也可以直接传 `--projectCode A3018377`，以 `A` 开头的编号会自动按客户项目处理。研发项目仍按原有 `--projectCode Y...` 逻辑处理。
+
 8. 补录批量工时运行:
 
 ```bash
@@ -98,6 +108,8 @@ node submit-month-worktime.js
 ```bash
 node submit-month-worktime.js --supplementRequestId 1058063 --projectCode Y3018005 --content "Nexus 开发" --hours 8
 ```
+
+月度补录同样支持 `--customerProjectCode` 或 `--projectType customer`；普通工时录入仍优先使用 `--noSupplement`。
 
 9. 读取脚本输出 JSON,向用户汇报:
    - 普通工时录入: 每个日期的 requestId、项目编号、项目名称、工时、工作内容
